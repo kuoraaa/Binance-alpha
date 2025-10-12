@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = os.getenv("MTQyNjkyNzgzNjIwMzE4ODM5Nw.Gookgp.DYIDlCA4EmJxtPOpIcDs161moKg90ukzx2DCd0")
 CHANNEL_NAME = "alpha"
 TWITTER_URL = "https://x.com/alpha123uk"
 
