@@ -1,5 +1,5 @@
 import asyncio
-import snscrape.modules.twitter as sntwitter
+import snscrape_updated.modules.twitter as sntwitter
 import discord
 from discord.ext import commands, tasks
 import os
