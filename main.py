@@ -17,7 +17,7 @@ last_tweet_id = None
 # --- Ambil tweet terbaru ---
 async def fetch_latest_tweet():
     global last_tweet_id
-    tweets = list(sntwitter.TwitterSearchScraper(f'from:{TWITTER_USERNAME}').get_items())
+    tweets = list(sntwitter.TwitterUserScraper(TWITTER_USERNAME).get_items())
 
     if tweets:
         latest = tweets[0]
