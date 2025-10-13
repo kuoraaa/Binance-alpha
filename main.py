@@ -1,8 +1,8 @@
-import os
 import asyncio
+import snscrape.modules.twitter as sntwitter
 import discord
 from discord.ext import commands, tasks
-import snscrape_updated.modules.twitter as sntwitter
+import os
 
 # Ambil token dari environment variable
 TOKEN = os.getenv("DISCORD_TOKEN")
