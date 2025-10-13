@@ -14,21 +14,17 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 last_tweet_id = None
 
-# --- Ambil tweet terbaru ---
+# --- Ambil tweet terbaru (1 saja) ---
 async def fetch_latest_tweet():
     global last_tweet_id
     try:
-        # Pakai versi lama TwitterUserScraper
-        tweets = list(sntwitter.TwitterUserScraper(TWITTER_USERNAME).get_items())
-
-        if tweets:
-            latest = tweets[0]
-            if last_tweet_id != latest.id:
-                last_tweet_id = latest.id
-                return f"https://x.com/{TWITTER_USERNAME}/status/{latest.id}"
+        for tweet in sntwitter.TwitterUserScraper(TWITTER_USERNAME).get_items():
+            if last_tweet_id != tweet.id:
+                last_tweet_id = tweet.id
+                return f"https://x.com/{TWITTER_USERNAME}/status/{tweet.id}"
+            break  # ambil 1 tweet saja
     except Exception as e:
         print(f"⚠️ Error saat mengambil tweet: {e}")
-
     return None
 
 # --- Loop pengecekan tiap 1 menit ---
