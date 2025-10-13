@@ -1,4 +1,3 @@
 discord.py
 python-dotenv
-snscrape-updated
-
+git+https://github.com/JustAnotherArchivist/snscrape.git
