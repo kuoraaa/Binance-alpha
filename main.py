@@ -3,86 +3,76 @@ import requests
 import discord
 from discord.ext import tasks, commands
 from dotenv import load_dotenv
-from xml.etree import ElementTree as ET
 
 # Load environment variables
 load_dotenv()
 
-print("🧠 Environment check:")
-print("DISCORD_TOKEN:", os.getenv("DISCORD_TOKEN"))
-print("DISCORD_CHANNEL_ID:", os.getenv("DISCORD_CHANNEL_ID"))
-print("TWITTER_USERNAME:", os.getenv("TWITTER_USERNAME"))
-
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
-TWITTER_USERNAME = os.getenv("TWITTER_USERNAME", "alpha123uk")
+DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
+TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
+TWITTER_USERNAME = os.getenv("TWITTER_USERNAME")
 
-if not DISCORD_TOKEN or not DISCORD_CHANNEL_ID:
-    raise ValueError("❌ Missing DISCORD_TOKEN or DISCORD_CHANNEL_ID in environment variables")
+if not DISCORD_TOKEN or not DISCORD_CHANNEL_ID or not TWITTER_BEARER_TOKEN or not TWITTER_USERNAME:
+    raise ValueError("❌ Missing one or more required environment variables in .env")
 
-DISCORD_CHANNEL_ID = int(DISCORD_CHANNEL_ID)
-
-# Discord setup
+# Discord bot setup
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-last_tweet_url = None
+last_tweet_id = None
 
-# Nitter mirrors list
-NITTER_MIRRORS = [
-    "https://nitter.net",
-    "https://nitter.poast.org",
-    "https://nitter.privacydev.net",
-    "https://nitter.freedit.eu"
-]
+# --- Step 1: Get Twitter user ID ---
+def get_twitter_user_id(username):
+    headers = {"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}
+    url = f"https://api.twitter.com/2/users/by/username/{username}"
+    resp = requests.get(url, headers=headers, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["data"]["id"]
 
-def get_latest_tweet(username):
-    """Fetch the latest tweet from multiple Nitter mirrors with automatic rotation."""
-    for mirror in NITTER_MIRRORS:
-        rss_url = f"{mirror}/{username}/rss"
-        try:
-            response = requests.get(rss_url, timeout=10)
-            response.raise_for_status()
-            root = ET.fromstring(response.content)
-            first_item = root.find("channel/item")
-            if first_item is not None:
-                link = first_item.find("link").text
-                title = first_item.find("title").text
-                return {"title": title, "link": link}
-        except requests.exceptions.HTTPError as http_err:
-            if response.status_code == 429:
-                print(f"⚠️ Rate limited on {mirror}, trying next mirror...")
-            else:
-                print(f"❌ HTTP error on {mirror}: {http_err}")
-        except Exception as e:
-            print(f"❌ Failed to fetch from {mirror}: {e}")
+user_id = get_twitter_user_id(TWITTER_USERNAME)
+print(f"Twitter user ID for {TWITTER_USERNAME}: {user_id}")
+
+# --- Step 2: Fetch latest tweet ---
+def get_latest_tweet():
+    global user_id, TWITTER_BEARER_TOKEN
+    url = f"https://api.twitter.com/2/users/{user_id}/tweets?max_results=5&tweet.fields=created_at"
+    headers = {"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if "data" in data and len(data["data"]) > 0:
+            latest_tweet = data["data"][0]
+            return {"id": latest_tweet["id"], "text": latest_tweet["text"]}
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to fetch tweets: {e}")
     return None
 
+# --- Discord bot events ---
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if channel:
-        await channel.send("✅ Hello from Binance Alpha bot! I'm alive 🚀")
+        await channel.send("✅ Bot is online and ready!")
     check_tweets.start()
 
-@tasks.loop(minutes=5.0)
+# --- Task loop to check tweets ---
+@tasks.loop(minutes=5)
 async def check_tweets():
-    """Check for new tweets every 5 minutes."""
-    global last_tweet_url
-    tweet = get_latest_tweet(TWITTER_USERNAME)
+    global last_tweet_id
+    tweet = get_latest_tweet()
     if tweet:
-        if tweet["link"] != last_tweet_url:
-            print(f"📢 New tweet found: {tweet['title']}")
+        if tweet["id"] != last_tweet_id:
             channel = bot.get_channel(DISCORD_CHANNEL_ID)
             if channel:
-                await channel.send(
-                    f"🐦 New tweet from **{TWITTER_USERNAME}**:\n{tweet['title']}\n{tweet['link']}"
-                )
-            last_tweet_url = tweet["link"]
+                await channel.send(f"🐦 New tweet from **{TWITTER_USERNAME}**:\n{tweet['text']}")
+            last_tweet_id = tweet["id"]
         else:
             print("⏳ No new tweets yet.")
     else:
-        print("⚠️ Could not retrieve tweet from any mirror.")
+        print("⚠️ Could not retrieve tweet.")
 
+# --- Run bot ---
 bot.run(DISCORD_TOKEN)
