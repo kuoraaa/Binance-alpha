@@ -1,51 +1,79 @@
-import asyncio
-import snscrape.modules.twitter as sntwitter
-import discord
-from discord.ext import commands, tasks
 import os
+import asyncio
+import requests
+from bs4 import BeautifulSoup
+import discord
+from discord.ext import tasks
 
-# Ambil token dari environment variable
-TOKEN = os.getenv("DISCORD_TOKEN")
-TWITTER_USERNAME = "alpha123uk"
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
 
-# Setup Discord intents & bot
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
+TWITTER_USERNAME = os.getenv("TWITTER_USERNAME", "binance")
+
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
+client = discord.Client(intents=intents)
 
-last_tweet_id = None
+last_tweet_link = None  # to track the most recent tweet
 
-# --- Ambil tweet terbaru (1 saja) ---
-async def fetch_latest_tweet():
-    global last_tweet_id
+
+def get_latest_tweet(username):
+    """Scrape latest tweet using Nitter"""
     try:
-        for tweet in sntwitter.TwitterUserScraper(TWITTER_USERNAME).get_items():
-            if last_tweet_id != tweet.id:
-                last_tweet_id = tweet.id
-                return f"https://x.com/{TWITTER_USERNAME}/status/{tweet.id}"
-            break  # ambil 1 tweet saja
-    except Exception as e:
-        print(f"⚠️ Error saat mengambil tweet: {e}")
-    return None
+        url = f"https://nitter.privacydev.net/{username}"
+        res = requests.get(url, timeout=10)
+        if res.status_code != 200:
+            print("Nitter server error:", res.status_code)
+            return None, None
 
-# --- Loop pengecekan tiap 1 menit ---
-@tasks.loop(minutes=1)
+        soup = BeautifulSoup(res.text, "html.parser")
+        tweet = soup.find("div", {"class": "timeline-item"})
+        if not tweet:
+            return None, None
+
+        content = tweet.find("div", {"class": "tweet-content"}).text.strip()
+        link = tweet.find("a", {"class": "tweet-date"})["href"]
+        full_link = f"https://x.com{link}"
+        return content, full_link
+    except Exception as e:
+        print("Error scraping:", e)
+        return None, None
+
+
+@client.event
+async def on_ready():
+    print(f"✅ Logged in as {client.user}")
+    check_tweets.start()  # start background loop
+
+
+@tasks.loop(minutes=2)
 async def check_tweets():
-    await bot.wait_until_ready()
-    channel = discord.utils.get(bot.get_all_channels(), name="alpha")
-    if not channel:
-        print("⚠️ Channel #alpha tidak ditemukan.")
+    global last_tweet_link
+    content, link = get_latest_tweet(TWITTER_USERNAME)
+    if not link or not content:
         return
 
-    tweet_link = await fetch_latest_tweet()
-    if tweet_link:
-        await channel.send(f"🐦 New tweet from @{TWITTER_USERNAME}!\n{tweet_link}")
-        print(f"✅ Sent tweet link to Discord: {tweet_link}")
+    # Only post if there's a new tweet
+    if last_tweet_link != link:
+        last_tweet_link = link
+        channel = client.get_channel(DISCORD_CHANNEL_ID)
+        if channel:
+            msg = f"🕊️ New tweet from **@{TWITTER_USERNAME}**:\n\n{content}\n\n{link}"
+            await channel.send(msg)
+            print("✅ Posted new tweet to Discord!")
+        else:
+            print("⚠️ Channel not found!")
 
-# --- Saat bot siap ---
-@bot.event
-async def on_ready():
-    print(f"🤖 Logged in as {bot.user}")
-    check_tweets.start()
 
-# --- Jalankan bot ---
-bot.run(TOKEN)
+@client.event
+async def on_message(message):
+    if message.author == client.user:
+        return
+
+    if message.content.lower().startswith("!ping"):
+        await message.channel.send("✅ I'm alive!")
+
+
+client.run(DISCORD_TOKEN)
